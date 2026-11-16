@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -35,6 +35,17 @@ jobs:
 
       - name: Build archive
         run: python package_skill.py cocos-creator-dev
+
+      - name: Check archive is reproducible
+        run: |
+          first=$(sha256sum cocos-creator-dev.skill | cut -d' ' -f1)
+          touch cocos-creator-dev/SKILL.md
+          python package_skill.py cocos-creator-dev >/dev/null
+          second=$(sha256sum cocos-creator-dev.skill | cut -d' ' -f1)
+          if [ "$first" != "$second" ]; then
+            echo "::error::archive is not reproducible ($first vs $second)"
+            exit 1
+          fi
 
       - name: Check archive contents
         run: |
