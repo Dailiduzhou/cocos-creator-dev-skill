@@ -4,7 +4,7 @@ A comprehensive skill for [Claude](https://claude.ai) that provides expert guida
 
 ## Overview
 
-This skill offers complete coverage of Cocos Creator 3.x development including:
+This skill covers common Cocos Creator runtime-development workflows, using the official **3.8 documentation as its reference baseline** and checking the actual project version before choosing APIs:
 - TypeScript scripting with proper decorators
 - Component system and lifecycle management
 - Node hierarchy and scene organization
@@ -105,12 +105,21 @@ The skill includes detailed reference documentation:
 - **[Scene Management](cocos-creator-dev/references/scene-management.md)** - Scene loading and data persistence
 - **[Resource Management](cocos-creator-dev/references/resource-management.md)** - Asset loading and memory management
 - **[Event System](cocos-creator-dev/references/event-system.md)** - Input handling and custom events
+- **[Migration](cocos-creator-dev/references/migration.md)** - 2.x migration and earlier 3.x version boundaries
+- **[Official Sources](cocos-creator-dev/references/official-sources.md)** - Versioned sources and evidence policy
 
 ## Compatibility
 
-- ✅ Cocos Creator 3.0 and above
-- ✅ TypeScript exclusively (JavaScript not supported in 3.x)
-- ✅ All platforms supported by Cocos Creator 3.x
+- Examples target the Creator **3.8 documentation baseline**; verify against the installed minor/patch version.
+- New component examples use TypeScript. Creator also supports JavaScript modules and plugin scripts.
+- Web/native/mini-game behavior requires target-platform validation; editor preview alone is insufficient.
+- Advanced rendering, physics, editor extensions, and platform integrations require their own versioned official documentation.
+
+## Evaluation and validation
+
+Three regression prompts and their assertions live in [`cocos-creator-dev/evals/evals.json`](cocos-creator-dev/evals/evals.json): shared dynamic assets, Bundle scene navigation, and UI events/lifecycle. Compare the revised skill against a pre-edit snapshot, not against a baseline that accidentally reads the revised references.
+
+Local comparison artifacts and the skill-creator HTML review are kept under `cocos-creator-dev-workspace/` (ignored by Git). These are static code-generation evaluations, not Creator runtime tests. The source directory is authoritative for unreleased revisions; the prebuilt `.skill` archive is updated separately at release time.
 
 ## Contributing
 

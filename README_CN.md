@@ -4,7 +4,7 @@
 
 ## 概述
 
-本技能涵盖了 Cocos Creator 3.x 开发的完整内容，包括：
+本技能覆盖 Cocos Creator 常见运行时开发流程，以 **3.8 官方文档为参考基线**，选择 API 前先核对实际项目版本：
 - 使用装饰器的 TypeScript 脚本编写
 - 组件系统和生命周期管理
 - 节点层级和场景组织
@@ -105,12 +105,21 @@ export class PlayerController extends Component {
 - **[场景管理](cocos-creator-dev/references/scene-management.md)** - 场景加载和数据持久化
 - **[资源管理](cocos-creator-dev/references/resource-management.md)** - 资源加载和内存管理
 - **[事件系统](cocos-creator-dev/references/event-system.md)** - 输入处理和自定义事件
+- **[版本迁移](cocos-creator-dev/references/migration.md)** - 2.x 迁移与早期 3.x 的版本边界
+- **[官方来源](cocos-creator-dev/references/official-sources.md)** - 版本化文档与核验策略
 
 ## 兼容性
 
-- ✅ Cocos Creator 3.0 及以上版本
-- ✅ 仅支持 TypeScript（3.x 中不支持 JavaScript）
-- ✅ Cocos Creator 3.x 支持的所有平台
+- 示例以 Creator **3.8 官方文档**为基线，需结合已安装的具体小版本核对。
+- 新组件使用 TypeScript；Creator 也支持 JavaScript 模块和插件脚本。
+- Web、原生和小游戏需要在目标平台验证，编辑器预览不能替代实机测试。
+- 高级渲染、物理、编辑器扩展和平台集成需额外查阅对应版本的官方章节。
+
+## 评估与验证
+
+[`cocos-creator-dev/evals/evals.json`](cocos-creator-dev/evals/evals.json) 包含三个回归案例及评分条件：共享动态资源、Bundle 场景导航、UI 事件与生命周期。更新前版本应先快照保存，避免基线测试误读新版参考资料。
+
+本地对比结果和 skill-creator HTML 评审页面保存在 `cocos-creator-dev-workspace/`（不提交 Git）。这些是代码生成与静态审查测试，不代表 Creator 运行验证。未发布更新以源码目录为准，预打包的 `.skill` 文件在发布时另行更新。
 
 ## 贡献
 
