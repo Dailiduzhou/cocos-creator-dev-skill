@@ -18,8 +18,8 @@ cocos-creator-dev-skill/
 │   │   ├── event-system.md
 │   │   ├── migration.md
 │   │   └── official-sources.md
-│   └── evals/
-│       └── evals.json             # Prompts, expected outputs, assertions
+├── evals/
+│   └── evals.json                 # Dev-only prompts/assertions; not distributed
 └── cocos-creator-dev-workspace/    # Local only, ignored by Git
     ├── skill-snapshot/            # Original baseline, including references
     └── iteration-1/

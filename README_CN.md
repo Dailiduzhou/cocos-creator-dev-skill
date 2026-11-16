@@ -15,20 +15,40 @@
 
 ## 安装
 
-### 使用技能文件（推荐）
+### 使用 `skills` CLI（推荐）
 
-1. 从 [Releases](releases) 页面下载最新的 `cocos-creator-dev.skill` 文件
-2. 将技能导入 Claude 的技能系统
-3. 立即开始使用
+```bash
+# 交互式选择要安装到的 agent
+npx skills add Dailiduzhou/cocos-creator-dev-skill
 
-### 手动安装
+# 非交互、项目级、复制而非软链接
+npx skills add Dailiduzhou/cocos-creator-dev-skill --skill cocos-creator-dev -a '*' --copy -y
 
-1. 克隆此仓库
-2. 使用打包脚本：
-   ```bash
-   python package_skill.py
-   ```
-3. 导入生成的 `.skill` 文件
+# 安装到本机所有项目（建议同时用 -a 限定 agent；裸 -g 会装进它能识别的所有 agent 目录）
+npx skills add Dailiduzhou/cocos-creator-dev-skill -g -a pi -y
+```
+
+只会安装**技能本身**（`SKILL.md` + `references/`）到 agent 的 skills 目录（如 Codex/Pi 的 `.agents/skills/`、Claude Code 的 `.claude/skills/`）。`evals/` 属于开发资产，不会随分发安装。
+
+### 使用预打包产物
+
+```bash
+python package_skill.py                     # 从源码重新生成 cocos-creator-dev.skill
+unzip cocos-creator-dev.skill -d ~/.agents/skills/cocos-creator-dev
+```
+
+该产物是普通 zip，根目录为 `SKILL.md`，供支持导入 `.skill` 的环境或手动解压使用。`skills add` 也接受直接 URL，便于固定版本：
+
+```bash
+npx skills add https://raw.githubusercontent.com/Dailiduzhou/cocos-creator-dev-skill/main/cocos-creator-dev.skill -a pi -y
+```
+
+### 从克隆安装（开发）
+
+```bash
+git clone https://github.com/Dailiduzhou/cocos-creator-dev-skill
+npx skills add ./cocos-creator-dev-skill/cocos-creator-dev --copy -y
+```
 
 ## 使用方法
 
@@ -117,7 +137,7 @@ export class PlayerController extends Component {
 
 ## 评估与验证
 
-[`cocos-creator-dev/evals/evals.json`](cocos-creator-dev/evals/evals.json) 包含三个回归案例及评分条件：共享动态资源、Bundle 场景导航、UI 事件与生命周期。更新前版本应先快照保存，避免基线测试误读新版参考资料。
+[`evals/evals.json`](evals/evals.json) 包含三个回归案例及评分条件：共享动态资源、Bundle 场景导航、UI 事件与生命周期。更新前版本应先快照保存，避免基线测试误读新版参考资料。
 
 本地对比结果和 skill-creator HTML 评审页面保存在 `cocos-creator-dev-workspace/`（不提交 Git）。这些是代码生成与静态审查测试，不代表 Creator 运行验证。未发布更新以源码目录为准，预打包的 `.skill` 文件在发布时另行更新。
 

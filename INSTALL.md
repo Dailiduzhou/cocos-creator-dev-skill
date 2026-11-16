@@ -1,72 +1,82 @@
 # Installation Guide
 
-This guide explains how to install and use the Cocos Creator 3.x Development Skill.
+The skill is distributed as a directory (`cocos-creator-dev/`) containing `SKILL.md` and `references/`. `evals/` is development-only and is not installed.
 
 ## Prerequisites
 
-- Claude AI access with skill support
-- Python 3.6+ (for manual packaging only)
+- Node.js (for `npx skills`) **or** an agent that imports `.skill` files / reads skills from a directory
+- Python 3.8+ only if you rebuild the archive with `package_skill.py`
 
-## Installation Methods
+## Method 1: `skills` CLI (recommended)
 
-### Method 1: Using Pre-packaged Skill File (Recommended)
+```bash
+# Interactive: choose scope and agent(s)
+npx skills add Dailiduzhou/cocos-creator-dev-skill
 
-1. Download the latest `cocos-creator-dev.skill` file from the [Releases](releases) page
-2. Open Claude's skill management interface
-3. Import the `.skill` file
-4. The skill will be automatically activated
+# Project scope, all detected agents, copy instead of symlink, no prompts
+npx skills add Dailiduzhou/cocos-creator-dev-skill --skill cocos-creator-dev -a '*' --copy -y
 
-### Method 2: Manual Installation
+# User scope (available in every project). Add -a <agent> to avoid copying into
+# every agent directory the CLI detects.
+npx skills add Dailiduzhou/cocos-creator-dev-skill -g -a pi -y
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/your-username/cocos-creator-dev.git
-   cd cocos-creator-dev
-   ```
+# List what the repository exposes without installing
+npx skills add Dailiduzhou/cocos-creator-dev-skill --list
+```
 
-2. Package the skill:
-   ```bash
-   python package_skill.py
-   ```
+The skill is installed into the agent's skills directory, for example:
 
-3. Import the generated `cocos-creator-dev.skill` file into Claude
+| Agent | Project path | Global path |
+| --- | --- | --- |
+| Codex, Pi, Cursor, Gemini CLI, Copilot | `.agents/skills/cocos-creator-dev` | `~/.agents/skills/cocos-creator-dev` |
+| Claude Code | `.claude/skills/cocos-creator-dev` | `~/.claude/skills/cocos-creator-dev` |
+| Others | see `npx skills add --help` / the skills README agent table | |
+
+Update later with `npx skills update`; remove with `npx skills remove cocos-creator-dev`.
+
+## Method 2: prebuilt archive
+
+```bash
+python package_skill.py     # rebuild cocos-creator-dev.skill from cocos-creator-dev/
+unzip cocos-creator-dev.skill -d ~/.agents/skills/cocos-creator-dev
+```
+
+The archive is a plain zip whose root is `SKILL.md` plus `references/`; use it in environments that import `.skill` files or where you prefer to unzip manually.
+
+`skills add` also installs the archive straight from a URL (the extension does not matter, the content is sniffed):
+
+```bash
+npx skills add https://raw.githubusercontent.com/Dailiduzhou/cocos-creator-dev-skill/main/cocos-creator-dev.skill -a pi -y
+```
+
+Use a tag or commit URL instead of `main` to pin a version.
+
+## Method 3: from a clone (development)
+
+```bash
+git clone https://github.com/Dailiduzhou/cocos-creator-dev-skill
+npx skills add ./cocos-creator-dev-skill/cocos-creator-dev --copy -y
+```
+
+Installing the repository root also works (`npx skills add ./cocos-creator-dev-skill`); discovery finds the single skill inside it.
 
 ## Verification
 
-After installation, test the skill by asking:
+```bash
+npx skills ls                       # lists cocos-creator-dev and its source
+ls .agents/skills/cocos-creator-dev # SKILL.md + references/, no evals/
+```
+
+Then ask the agent something that must load a reference, for example:
 
 ```
-Help me create a basic Cocos Creator component with a property
+Creator 3.8 里两个面板共用一张头像，关闭一个后另一个变白，怎么修？
 ```
 
-The skill should respond with a proper TypeScript component template.
+A working install answers with the shared-`SpriteFrame` ownership explanation and cites the bundled reference guidance. If the agent answers generically or invents APIs, confirm the skill directory is on the agent's skills path and that `SKILL.md` is readable.
 
-## Troubleshooting
+## Maintenance
 
-### Skill not loading
-- Ensure you have the latest version of Claude with skill support
-- Check that the `.skill` file is not corrupted
-
-### Python packaging fails
-- Verify Python 3.6+ is installed: `python --version`
-- Ensure all required files are present in the `cocos-creator-dev` directory
-
-### Skill not responding correctly
-- Verify you're asking about Cocos Creator 3.x, not 2.x
-- Include "Cocos Creator 3.x" in your query for best results
-
-## Next Steps
-
-- Read the [README.md](README.md) for usage examples
-- Explore the [reference documentation](cocos-creator-dev/references/) for detailed guides
-- Check the [Troubleshooting section](README.md#troubleshooting) in README for common issues
-
-## Support
-
-If you encounter any issues not covered here:
-1. Check existing [GitHub Issues](../../issues)
-2. Create a new issue with:
-   - Your operating system
-   - Claude version
-   - Steps to reproduce the issue
-   - Expected vs actual behavior
+- Source of truth: `cocos-creator-dev/`. The `.skill` archive is generated and must be rebuilt after source changes.
+- Evaluation fixtures: `evals/evals.json` (repo root) — never installed.
+- `package_skill.py` excludes `evals/`, `__pycache__`, `.git` and `.DS_Store`; after packaging, verify with `diff -r` against the extracted archive.

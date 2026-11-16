@@ -15,20 +15,41 @@ This skill covers common Cocos Creator runtime-development workflows, using the 
 
 ## Installation
 
-### Using the Skill File (Recommended)
+### Using the `skills` CLI (recommended)
 
-1. Download the latest `cocos-creator-dev.skill` file from the [Releases](releases) page
-2. Import the skill into Claude's skill system
-3. Start using the skill immediately
+```bash
+# Pick the agent(s) to install into
+npx skills add Dailiduzhou/cocos-creator-dev-skill
 
-### Manual Installation
+# Non-interactive, project scope, copy instead of symlink
+npx skills add Dailiduzhou/cocos-creator-dev-skill --skill cocos-creator-dev -a '*' --copy -y
 
-1. Clone this repository
-2. Use the packaging script:
-   ```bash
-   python package_skill.py
-   ```
-3. Import the generated `.skill` file
+# Install for every project, limited to one agent (bare -g targets every
+# agent it can detect, which is a lot of directories)
+npx skills add Dailiduzhou/cocos-creator-dev-skill -g -a pi -y
+```
+
+This installs **only the skill** (`SKILL.md` plus `references/`) into the agent's skills directory (`<agent>/skills/` — for example `.agents/skills/` for Codex/Pi, `.claude/skills/` for Claude Code). The `evals/` directory is development-only and is not part of the distributed skill.
+
+### Prebuilt archive
+
+```bash
+python package_skill.py                     # rebuild cocos-creator-dev.skill from source
+unzip cocos-creator-dev.skill -d ~/.agents/skills/cocos-creator-dev
+```
+
+The archive is a plain zip with `SKILL.md` at its root, for environments that import `.skill` files or unzip manually. `skills add` also accepts it by URL, which is useful for pinning a release:
+
+```bash
+npx skills add https://raw.githubusercontent.com/Dailiduzhou/cocos-creator-dev-skill/main/cocos-creator-dev.skill -a pi -y
+```
+
+### From a clone (development)
+
+```bash
+git clone https://github.com/Dailiduzhou/cocos-creator-dev-skill
+npx skills add ./cocos-creator-dev-skill/cocos-creator-dev --copy -y
+```
 
 ## Usage
 
@@ -117,7 +138,7 @@ The skill includes detailed reference documentation:
 
 ## Evaluation and validation
 
-Three regression prompts and their assertions live in [`cocos-creator-dev/evals/evals.json`](cocos-creator-dev/evals/evals.json): shared dynamic assets, Bundle scene navigation, and UI events/lifecycle. Compare the revised skill against a pre-edit snapshot, not against a baseline that accidentally reads the revised references.
+Three regression prompts and their assertions live in [`evals/evals.json`](evals/evals.json): shared dynamic assets, Bundle scene navigation, and UI events/lifecycle. Compare the revised skill against a pre-edit snapshot, not against a baseline that accidentally reads the revised references.
 
 Local comparison artifacts and the skill-creator HTML review are kept under `cocos-creator-dev-workspace/` (ignored by Git). These are static code-generation evaluations, not Creator runtime tests. The source directory is authoritative for unreleased revisions; the prebuilt `.skill` archive is updated separately at release time.
 
