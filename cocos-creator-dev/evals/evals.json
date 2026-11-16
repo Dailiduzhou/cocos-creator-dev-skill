@@ -1,0 +1,88 @@
+{
+  "skill_name": "cocos-creator-dev",
+  "evals": [
+    {
+      "id": 1,
+      "name": "shared-avatar-lifetime",
+      "prompt": "Cocos Creator 3.8，背包面板和个人资料面板都显示 assets/resources/avatars/hero.png。现在 resources.load('avatars/hero', SpriteFrame, ...) 后赋给 Sprite，关闭背包时 releaseAsset(sprite.spriteFrame)，个人资料头像偶尔变白。快速切换头像或关闭面板还会收到旧回调。请给一个可直接放到 assets/scripts 的 TypeScript 组件修复它，说明 Inspector 配置、资源所有权和测试步骤。没有完整项目或可用编辑器，不要声称已运行。",
+      "expected_output": "A complete component using correct sub-asset paths, balanced dynamic ownership, error handling and stale-result guards, plus setup and honest validation limits.",
+      "files": [],
+      "assertions": [
+        "Loads the image's SpriteFrame using avatars/hero/spriteFrame or an equivalent correct sub-asset path without the png extension.",
+        "Explains that runtime assignment does not automatically add an asset reference; the proposed implementation pairs each retained dynamic reference with a release and does not force-release a shared frame.",
+        "Rejects stale or out-of-order successful callbacks and callbacks after disable or destruction, with a balanced ownership path for any reference acquired by the callback.",
+        "Handles load errors and missing/invalid Sprite references; includes Inspector wiring and concrete repeated-open/shared-view tests without claiming engine execution."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "bundle-scene-navigation",
+      "prompt": "Creator 3.8 的大厅切战斗场景要改造：Battle 在名为 battle 的 Asset Bundle 里。当前代码 game.addPersistRoot(this.node); assetManager.loadBundle('battle', (e,b) => b.loadScene('Battle', () => director.runScene(b.getScene('Battle')))); 离开时 assetManager.releaseBundle('battle')。管理器目前放在 Canvas/Managers 下，连点进入按钮会重复切换。请修复为完整 TypeScript 管理器，解释编辑器设置、失败处理、常驻节点和退出后的 Bundle 清理；大厅和战斗还共享一些 UI 纹理。只做代码与文档审查，不具备运行环境。",
+      "expected_output": "A scene-root persistent navigator with duplicate/busy guards, supported director and Bundle APIs, error handling, safe shared-asset teardown policy and setup instructions.",
+      "files": [],
+      "assertions": [
+        "Uses director.addPersistRootNode and requires or establishes a direct scene-root child; does not use the nonexistent game.addPersistRoot or present the deprecated game.addPersistRootNode alias (deprecated since 3.6) as the recommended persistence API.",
+        "Launches the scene asset received from bundle.loadScene with a supported director API, without using bundle.getScene.",
+        "Handles both Bundle and scene errors and prevents duplicate managers and repeated-click concurrent transitions.",
+        "Distinguishes removeBundle from asset release, avoids releaseBundle, and does not unconditionally force-release assets shared with the lobby or persistent consumers.",
+        "Explains that removeBundle alone leaves already loaded assets cached and states when bundle.release/bundle.releaseAll is acceptable (a confirmed-exclusive Bundle, released before removal)."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "ui-events-lifecycle",
+      "prompt": "帮我审查 Creator 3.8 的 UI 拖拽组件：在 onEnable 里 node.on(TOUCH_MOVE, this.drag.bind(this))，onDisable 用 this.drag.bind(this) 解绑；drag 里 event.getLocalLocation() 后直接 node.setPosition(x,y)。父节点有缩放，Canvas 下坐标不准，而且开关面板后回调越来越多。子节点 node.emit('selected', itemId) 父节点也收不到。另一个组件用 executionOrder = -10，却还是读到未初始化数据；有人说 getComponent 返回 null 是因为 node.active=false。请给可用的拖拽组件和针对以上问题的修正方案，包含设置和验证步骤，不要假装在编辑器中跑过。",
+      "expected_output": "A stable-lifetime UI drag component with parent-space conversion and cancel handling; correct emit/dispatch distinction, execution-order decorator and activation/lookup explanation.",
+      "files": [],
+      "assertions": [
+        "Registers and unregisters drag listeners with stable matching callback identities and resets drag state on touch cancel or disable.",
+        "Converts getUILocation through the destination parent's UITransform (or a justified camera-aware equivalent), rather than using getLocalLocation or raw coordinates as child-local position.",
+        "Explains that node.emit does not bubble and proposes either direct subscription to that emitter or a bubbling Event subclass with dispatchEvent.",
+        "Uses @executionOrder rather than an ordinary field, does not guarantee readiness for inactive/async peers, and explains that inactive nodes still have retrievable components.",
+        "States that @executionOrder affects onLoad, onEnable, start, update and lateUpdate but not onDisable or onDestroy."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "ui-drag-anchor-camera",
+      "prompt": "Creator 3.8，UI 拖拽要对齐一个真实布局：被拖的 Item 在 Canvas/DragArea 下，DragArea 的 UITransform 锚点是 (0.2, 0.8)、缩放 (2, 0.5)、绕 Z 轴旋转 25°；Item 自己还挂着 Widget 并位于 Layout 里，拖动时要临时脱离布局。Canvas 是 Fit Height，UI 相机的 orthoHeight 被美术改过。要求实现“点哪拖哪”（抓取偏移不跳），并说明在什么情况下 event.getUILocation() + convertToNodeSpaceAR 这套标准写法不再成立、该用什么相机相关方案。请给可直接放进 assets/scripts 的 TypeScript 组件，以及设置与验证步骤；没有项目或编辑器，不要声称编译或运行过。",
+      "expected_output": "A drag component that converts pointer input into the destination parent's space under non-uniform scale/rotation/anchor, preserves the grab offset, detaches from Layout, states the standard-UI-camera assumption with a camera-aware alternative, and gives honest manual validation.",
+      "files": [],
+      "assertions": [
+        "Converts pointer input through the destination parent's UITransform (getUILocation + convertToNodeSpaceAR or a justified camera-aware equivalent); does not use getLocalLocation, getLocation, or raw coordinates as parent-local position.",
+        "Preserves the grab offset captured at TOUCH_START in parent space, so the node does not jump to the pointer, and explains that the dragged node's own anchor/pivot does not break the math because position is anchor-relative.",
+        "Handles non-uniform parent scale and 2D rotation through the transform, without hand-dividing by scale.x/scale.y or re-implementing rotation, and detaches the item from Layout (or explains how) before setting position.",
+        "States that the standard Canvas UI camera assumption underlies the simple conversion and gives a camera-aware path when orthoHeight/camera differs (screen-to-world via the UI camera, or equivalent), noting multiple cameras and RenderTexture caveats.",
+        "Includes concrete manual checks (corners of the item, 2:1 scale, 25-degree rotation, changed anchor, different aspect ratios) and states that nothing was compiled or run."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "api-precision-audit",
+      "prompt": "同事说下面这些在 Creator 3.8 都是对的，请你逐条判定真伪并给出正确写法（能跑的最小骨架即可）：1) game.addPersistRootNode 是 3.8 推荐的常驻节点 API；2) b.loadScene('Battle', cb) 之后用 b.getScene('Battle') 拿场景再 runScene；3) assetManager.releaseBundle('battle') 用来卸载 Bundle；4) node.emit('selected', id) 会冒泡到父节点；5) 组件里写 executionOrder = -10 就能提前执行；6) @property({type: String}) 是声明字符串属性的推荐写法；7) releaseAsset 会做释放检查，所以不会误释放别的界面还在用的资源。只做代码与文档审查，没有项目或编辑器，不要声称跑过。",
+      "expected_output": "A precise true/false audit that distinguishes nonexistent APIs from deprecated aliases and from behavior differences, plus minimal corrected code and honest static-only limits.",
+      "files": [],
+      "assertions": [
+        "Judges game.addPersistRootNode as existing but deprecated since 3.6 and recommends director.addPersistRootNode; does not claim the symbol is nonexistent.",
+        "Judges b.getScene as nonexistent (Bundle exposes getSceneInfo, not getScene) and uses the SceneAsset from the loadScene callback with director.runScene.",
+        "Judges assetManager.releaseBundle as nonexistent and explains removeBundle only unregisters the Bundle, separating it from releasing assets (release/releaseAll or balanced decRef).",
+        "Judges node.emit as non-bubbling and gives either dispatchEvent with an Event subclass (bubbling enabled) or direct subscription on the emitting node.",
+        "Judges the executionOrder field, type: String and releaseAsset claims correctly: the decorator is required, the String constructor triggers the documented warning, and releaseAsset bypasses release checks so it can destroy assets still referenced elsewhere."
+      ]
+    },
+    {
+      "id": 6,
+      "name": "compile-grade-component",
+      "prompt": "请给我一个能直接放进 assets/scripts 的单文件 TypeScript 组件：节点上可能没有 Sprite（需要运行时加/取），从 resources 加载 SpriteFrame 并显示，支持切换头像、面板关闭再打开、快速重复请求，旧回调不能覆盖新结果。硬性要求：在 Creator 3.8 生成的 cc 声明下 `tsc --noEmit`（strict）必须通过；不得使用 any、不得用非空断言 ! 掩盖可能为 null 的 Sprite/SpriteFrame；必须处理加载失败与组件已销毁。只输出一个 TypeScript 代码块（外加必要的说明文字），并给出 Inspector 与验证步骤；没有项目或编辑器，不要声称编译或运行过。",
+      "expected_output": "One self-contained component that type-checks under strict 3.8 cc declarations, with nullable-safe Sprite/SpriteFrame handling, balanced dynamic ownership, stale-result rejection and honest static-only validation.",
+      "files": [],
+      "assertions": [
+        "Uses only members that exist in the 3.8 cc declarations for the stated APIs (resources.load, getComponent/addComponent, isValid, Sprite.spriteFrame) and imports everything it uses from 'cc'.",
+        "Handles possibly-missing Sprite and nullable SpriteFrame without any and without non-null assertions, guarding before every assignment.",
+        "Pairs addRef/decRef for retained frames, clears the renderer reference before the final decRef, and never force-releases a shared frame.",
+        "Rejects stale or out-of-order results using a request token plus validity/enabled checks, and handles load errors without leaving a half-applied state.",
+        "Delivers one self-contained TypeScript block plus Inspector wiring and manual checks, and states explicitly that no compile or runtime test was performed."
+      ]
+    }
+  ]
+}

@@ -1,471 +1,90 @@
-# Component System
+# Component system (Creator 3.8 baseline)
 
-Cocos Creator 3.x component architecture and lifecycle management.
+## Lifecycle is activation-dependent
 
-## Component Lifecycle
+Typical first activation:
 
-### Lifecycle Flow
-
-```
-onLoad() → onEnable() → start() → update() → lateUpdate()
-               ↓                    ↓
-         onDisable()           onDestroy()
+```text
+onLoad → onEnable → start → update → lateUpdate
 ```
 
-### Lifecycle Methods
+`onDisable` and `onEnable` may repeat. `onLoad` and `start` do not repeat for each enable cycle. Destruction is deferred; `onDestroy` is cleanup, not an ordinary disable transition.
 
-#### onLoad()
+| Callback | Use it for | Do not assume |
+| --- | --- | --- |
+| `onLoad` | Initialize own state; obtain serialized references/components | Every peer's `onLoad` has already run |
+| `onEnable` | Subscribe to enabled-lifetime events; start schedules | It runs only once |
+| `start` | Initialization before this component's first update | Inactive/dynamically created components or asynchronous dependencies are all ready |
+| `update(dt)` | Frame-based behavior, scaled by seconds | A fixed frame duration |
+| `lateUpdate(dt)` | Work after updates, such as camera following | A replacement for an explicit data dependency |
+| `onDisable` | Remove enabled-lifetime listeners; clear transient state | The node is being destroyed |
+| `onDestroy` | Release owned resources and final references | It is the right place for every enable/disable cleanup |
 
-**When called**: When component is loaded and attached to node
+`onLoad` is triggered on first node activation, not merely because a script exists in a file. Other scene nodes/references can be found in `onLoad`, but finding a component does not establish that its initialization finished. Inactive nodes still contain components. Do not diagnose `getComponent()` returning null solely by testing `node.active`.
 
-**Characteristics**:
-- Called once when component is initialized
-- All components on same node are loaded
-- Other nodes may not be loaded yet
-
-**Use for**:
-- Initial data setup
-- Subscribing to node events
-- Initializing internal state
-
-**Example**:
-```typescript
-onLoad() {
-    this.currentHealth = this.maxHealth;
-    this.node.on(NodeEventType.TOUCH_START, this.onTouch, this);
-}
-```
-
-#### onEnable()
-
-**When called**: When node/component becomes active
-
-**Characteristics**:
-- Called every time node is activated
-- Called after `onLoad()` on first activation
-
-**Use for**:
-- Registering input events
-- Starting timers/schedules
-- Resuming paused behavior
-
-**Example**:
-```typescript
-onEnable() {
-    input.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
-    this.schedule(this.updateTimer, 1);
-}
-```
-
-#### start()
-
-**When called**: Before first frame update
-
-**Characteristics**:
-- Called only once
-- All components in scene have `onLoad()` called
-- Safe to access other components
-
-**Use for**:
-- Accessing other components/nodes
-- Post-initialization setup
-- Logic requiring other components to be ready
-
-**Example**:
-```typescript
-start() {
-    // Safe to access components on other nodes
-    this.player = find('Player').getComponent(PlayerController);
-}
-```
-
-#### update(deltaTime: number)
-
-**When called**: Every frame
-
-**Characteristics**:
-- Called every frame
-- Receives delta time since last frame
-
-**Use for**:
-- Movement
-- Animation
-- Continuous game logic
-
-**Example**:
-```typescript
-update(deltaTime: number) {
-    this.node.setPosition(
-        this.node.position.x + this.speed * deltaTime,
-        this.node.position.y
-    );
-}
-```
-
-#### lateUpdate(deltaTime: number)
-
-**When called**: After all `update()` calls
-
-**Characteristics**:
-- Called after all components' `update()`
-- Good for following other objects
-
-**Use for**:
-- Camera follow
-- UI updates based on game state
-- Calculations dependent on other updates
-
-**Example**:
-```typescript
-lateUpdate(deltaTime: number) {
-    // Camera follows player after player moves
-    const targetPos = this.target.position;
-    this.node.setPosition(targetPos.x, targetPos.y, this.node.position.z);
-}
-```
-
-#### onDisable()
-
-**When called**: When node/component becomes inactive
-
-**Use for**:
-- Unregistering input events
-- Stopping timers/schedules
-- Pausing behavior
-
-**Example**:
-```typescript
-onDisable() {
-    input.off(Input.EventType.TOUCH_START, this.onTouchStart, this);
-    this.unschedule(this.updateTimer);
-}
-```
-
-#### onDestroy()
-
-**When called**: When component/node is destroyed
-
-**Use for**:
-- Releasing resources
-- Removing event listeners
-- Cleanup before deletion
-
-**Example**:
-```typescript
-onDestroy() {
-    this.node.off(NodeEventType.TOUCH_START, this.onTouch, this);
-    assetManager.releaseAsset(this.texture);
-}
-```
-
-## Component Management
-
-### Adding Components
-
-#### In Editor
-
-1. Select node in **Hierarchy**
-2. **Add Component** → **Custom Script** → Select component
-
-#### Dynamically in Code
+## Execution order
 
 ```typescript
-// Add component to current node
-const rigidBody = this.node.addComponent(RigidBody2D);
+import { _decorator, Component } from 'cc';
+const { ccclass, executionOrder } = _decorator;
 
-// Add to other node
-const sprite = otherNode.addComponent(Sprite);
+@ccclass('EarlyState')
+@executionOrder(-100)
+export class EarlyState extends Component {
+    value = 0;
 
-// Add custom component
-const myComp = this.node.addComponent(MyComponent);
-```
-
-### Getting Components
-
-```typescript
-// Get component on same node
-const sprite = this.node.getComponent(Sprite);
-
-// Get component in children
-const childSprite = this.getComponentInChildren(Sprite);
-
-// Get all components in children
-const allSprites = this.getComponentsInChildren(Sprite);
-
-// Get component in parent
-const parentSprite = this.node.parent.getComponent(Sprite);
-
-// Get specific component type
-const myComp = this.node.getComponent('MyComponent') as MyComponent;
-```
-
-### Removing Components
-
-```typescript
-// Remove component
-const comp = this.node.getComponent(MyComponent);
-comp.destroy();
-
-// Remove all components of type
-const comps = this.node.getComponents(MyComponent);
-comps.forEach(c => c.destroy());
-```
-
-## Component Execution Order
-
-### Default Order
-
-- Not guaranteed across different components
-- Same component types execute in order of creation
-
-### Controlling Order
-
-#### Method 1: executionOrder Property
-
-```typescript
-@ccclass('EarlyUpdater')
-export class EarlyUpdater extends Component {
-    // Lower values execute first
-    executionOrder = -1;
-
-    update() {
-        // Runs before normal components
-    }
-}
-
-@ccclass('LateUpdater')
-export class LateUpdater extends Component {
-    // Higher values execute later
-    executionOrder = 1;
-
-    update() {
-        // Runs after normal components
+    onLoad(): void {
+        this.value = 42;
     }
 }
 ```
 
-#### Method 2: Dependency-Based
+Lower execution-order values run earlier within the engine's supported ordering. The decorator applies to `onLoad`, `onEnable`, `start`, `update`, and `lateUpdate`, not `onDisable`/`onDestroy`. Consult the matching version for node-tree ordering; do not promise a global total order for unrelated/dynamically activated nodes.
 
-Use `start()` for dependent logic:
+Prefer explicit `initialize(data)` calls or readiness promises when dependencies are asynchronous. Moving code from `onLoad` to `start` does not fix every ordering bug.
+
+## Enabled-lifetime scheduling
 
 ```typescript
-// Component A
-@ccclass('DataProvider')
-export class DataProvider extends Component {
-    data: number = 0;
+import { _decorator, Component } from 'cc';
+const { ccclass } = _decorator;
 
-    update() {
-        this.data = calculate();
+@ccclass('Heartbeat')
+export class Heartbeat extends Component {
+    onEnable(): void {
+        this.schedule(this.tick, 1);
     }
-}
 
-// Component B - depends on A
-@ccclass('DataConsumer')
-export class DataConsumer extends Component {
-    @property(DataProvider)
-    provider: DataProvider = null;
+    onDisable(): void {
+        this.unschedule(this.tick);
+    }
 
-    update() {
-        // Access data updated by A
-        const value = this.provider.data;
+    private tick(): void {
+        console.log('tick');
     }
 }
 ```
 
-## Component Communication
+Inside a component, `scheduleOnce(callback, delay)` and `schedule(callback, interval, repeat, delay)` express game-time work. For example `this.schedule(this.tick, 0.5, 5, 2)` runs after a delay and repeats five times after the first invocation (six calls total). These are positional arguments, not `repeat=5` assignment expressions.
 
-### Direct Reference
+Use stable function references to cancel. Engine-owned scheduling does not cancel network requests or arbitrary promises; invalidate their results separately. Use platform timers only when wall-clock behavior is actually required and clean them up explicitly.
 
-```typescript
-@ccclass('ComponentA')
-export class ComponentA extends Component {
-    @property(ComponentB)
-    target: ComponentB = null;
+## Component access and lifetime
 
-    doSomething() {
-        target.performAction();
-    }
-}
-```
+- `node.addComponent(MyComponent)` adds a component; an active node can trigger lifecycle work during addition. If configuration must precede activation, instantiate/configure under an inactive node and activate deliberately.
+- `node.getComponent(MyComponent)` returns the component or null; `getComponents` returns an array.
+- Remove a component by calling its `destroy()`, not an invented `node.removeComponent(...)` API.
+- Cache repeated lookups when useful, but refresh references if nodes/components are replaced.
+- Use `isValid(value, true)` when a reference queued for destruction must already be considered unusable.
 
-### Node Finding
+For owned resources, see [resource-management.md](resource-management.md); for stable event listener cleanup, see [event-system.md](event-system.md).
 
-```typescript
-// Find node by name
-const playerNode = find('Player');
-const player = playerNode.getComponent(PlayerController);
+## Validation cases
 
-// Find by path
-const enemy = find('Enemies/Enemy_01');
-```
+Exercise first activation, disable/re-enable, inactive initial nodes, dynamic component addition, and destruction while asynchronous work is pending. Log callback order rather than assuming it. Test schedule/listener counts after repeated UI opening.
 
-### Event System
+## Sources
 
-```typescript
-// Emitter
-@ccclass('HealthComponent')
-export class HealthComponent extends Component {
-    takeDamage(amount: number) {
-        this.health -= amount;
-        this.node.emit('health-changed', { current: this.health });
-    }
-}
-
-// Listener
-@ccclass('UIController')
-export class UIController extends Component {
-    onLoad() {
-        this.healthNode.on('health-changed', this.updateHealthBar, this);
-    }
-
-    updateHealthBar(data: { current: number }) {
-        this.healthBar.progress = data.current / 100;
-    }
-
-    onDestroy() {
-        this.healthNode.off('health-changed', this.updateHealthBar, this);
-    }
-}
-```
-
-### Singleton Manager
-
-```typescript
-@ccclass('EventManager')
-export class EventManager extends Component {
-    private static instance: EventManager = null;
-
-    static get getInstance(): EventManager {
-        return EventManager.instance;
-    }
-
-    onLoad() {
-        if (EventManager.instance) {
-            this.node.destroy();
-            return;
-        }
-        EventManager.instance = this;
-        game.addPersistRoot(this.node);
-    }
-
-    events: Map<string, Function[]> = new Map();
-
-    on(eventName: string, callback: Function) {
-        if (!this.events.has(eventName)) {
-            this.events.set(eventName, []);
-        }
-        this.events.get(eventName).push(callback);
-    }
-
-    emit(eventName: string, data: any) {
-        const callbacks = this.events.get(eventName);
-        if (callbacks) {
-            callbacks.forEach(cb => cb(data));
-        }
-    }
-}
-```
-
-## Component Scheduling
-
-### Timers
-
-```typescript
-// Schedule once
-this.scheduleOnce(() => {
-    console.log('Delayed action');
-}, 1); // 1 second delay
-
-// Schedule repeat
-this.schedule(this.updateTimer, 1); // Every 1 second
-
-// Schedule with interval
-this.schedule(this.task, 0.5, repeat=5, delay=2);
-
-// Unschedule specific
-this.unschedule(this.updateTimer);
-
-// Unschedule all
-this.unscheduleAllCallbacks();
-```
-
-### Frame Callbacks
-
-```typescript
-// Register for specific component
-this.node.addComponent(Component).scheduleOnce(...);
-
-// Use component's schedule system
-director.getScheduler().schedule(
-    callback,
-    this.target,
-    interval,
-    repeat,
-    delay,
-    !paused
-);
-```
-
-## Best Practices
-
-1. **Use onLoad for initialization**, not constructor
-2. **Use start for accessing other components**
-3. **Always unsubscribe events** in `onDisable()` or `onDestroy()`
-4. **Cache component references** to avoid repeated `getComponent()`
-5. **Use executionOrder** when update order matters
-6. **Prefer events** over tight coupling
-7. **Release resources** in `onDestroy()`
-8. **Check for null** on `@property` references before use
-
-## Common Pitfalls
-
-### Accessing Components Too Early
-
-```typescript
-// WRONG - in onLoad
-onLoad() {
-    const player = find('Player').getComponent(Player); // May not exist
-}
-
-// CORRECT - in start
-start() {
-    const player = find('Player').getComponent(Player); // Safe
-}
-```
-
-### Memory Leaks from Events
-
-```typescript
-// WRONG - forgetting to unsubscribe
-onLoad() {
-    this.node.on('click', this.onClick, this);
-}
-
-// CORRECT - unsubscribe in onDestroy
-onLoad() {
-    this.node.on('click', this.onClick, this);
-}
-
-onDestroy() {
-    this.node.off('click', this.onClick, this);
-}
-```
-
-### Expensive Operations in Update
-
-```typescript
-// WRONG - getting component every frame
-update() {
-    const sprite = this.node.getComponent(Sprite);
-    // Use sprite
-}
-
-// CORRECT - cache in onLoad
-onLoad() {
-    this.sprite = this.node.getComponent(Sprite);
-}
-
-update() {
-    // Use this.sprite
-}
-```
+- [Lifecycle callbacks](https://docs.cocos.com/creator/3.8/manual/en/scripting/life-cycle-callbacks.html)
+- [Execution-order decorator](https://docs.cocos.com/creator/3.8/manual/en/scripting/decorator.html)
+- [Component API](https://docs.cocos.com/creator/3.8/api/en/class/Component)

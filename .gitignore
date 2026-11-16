@@ -22,3 +22,7 @@ Thumbs.db
 *.log
 *.tmp
 *.temp
+
+# Local skill evaluation outputs and agent runs
+cocos-creator-dev-workspace/
+.pi/subagents/

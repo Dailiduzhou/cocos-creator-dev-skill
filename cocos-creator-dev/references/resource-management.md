@@ -1,579 +1,159 @@
-# Resource Management
+# Resource management (Creator 3.8 baseline)
 
-Loading, releasing, and managing assets in Cocos Creator 3.x.
+## Choose the loading boundary
 
-## Resource Manager Overview
+| Need | Mechanism |
+| --- | --- |
+| Known asset configured in the editor | Serialized `@property` reference |
+| Runtime path under `assets/resources/` | `resources.load(path, Type, callback)` |
+| Feature/level package | `assetManager.loadBundle`, then `bundle.load` |
+| Remote native image/audio/text | `assetManager.loadRemote` |
+| Advance download without usable instances yet | `preload`/`preloadDir`, followed by `load` |
 
-Cocos Creator 3.x uses `assetManager` for all resource operations. It provides:
-- Resource loading (local and remote)
-- Dependency management
-- Memory management
-- Asset bundles
-- Caching
+Do not put everything under `resources`: its contents and dependencies are included in builds, reducing automatic pruning. Dynamic assets can also live in custom Bundles.
 
-## Loading Resources
+Use paths relative to the resources/Bundle root without file extensions. For `assets/resources/textures/avatar.png`, the imported image's SpriteFrame is `textures/avatar/spriteFrame`; its Texture2D is `textures/avatar/texture`. Specifying the type alone does not replace the sub-asset path. An imported SpriteAtlas is loaded as an atlas, then accessed with `getSpriteFrame(name)`.
 
-### resources Directory
+Preloading downloads required files but does not complete asset deserialization/initialization. It can reduce later latency, not promise instant loading.
 
-Resources in `assets/resources/` can be loaded with `resources.load()`:
+## Ownership before release
 
-```
-assets/
-└── resources/
-    ├── textures/
-    │   └── player.png
-    ├── prefabs/
-    │   └── enemy.prefab
-    └── audio/
-        └── jump.mp3
-```
+The engine tracks serialized/static dependencies. It does **not** automatically count arbitrary JavaScript references or an assignment such as `sprite.spriteFrame = frame`.
 
-### Basic Loading
+- Call `addRef()` when a dynamic owner retains an asset, and pair it with exactly one `decRef()` when that owner stops using it.
+- Clear the consuming component's reference before dropping the owner's last reference. Do not decrement an asset just because you can access it: track which references your code acquired.
+- A newly loaded top-level asset is not guaranteed to have count 1. Cached assets and dependencies may already have references.
+- `assetManager.releaseAsset`, `bundle.release`, and `releaseAll` force-release their target assets; they are not safe substitutes for balanced ownership even when another consumer called `addRef()`.
+- Let the engine handle dependency release checks. Do not traverse dependencies and forcibly release them, or clear the asset cache as a memory-management strategy.
+- Destroying a node does not automatically balance your manual dynamic asset references. Conversely, do not force-release editor-assigned shared assets in every `onDestroy`.
+
+## Race-safe dynamic SpriteFrame component
+
+This example owns the target Sprite's dynamic frame while enabled. Attach it to a UI node with `Sprite`; set `framePath` to an existing SpriteFrame sub-asset path. The target Sprite should not be independently updated by another component.
 
 ```typescript
-import { resources, SpriteFrame, Prefab } from 'cc';
+import {
+    _decorator, Component, isValid, resources, Sprite, SpriteFrame,
+} from 'cc';
+const { ccclass, property, requireComponent } = _decorator;
 
-// Load single resource
-resources.load('textures/player', SpriteFrame, (err, asset) => {
-    if (err) {
-        console.error('Failed to load:', err);
-        return;
+@ccclass('OwnedSpriteFrame')
+@requireComponent(Sprite)
+export class OwnedSpriteFrame extends Component {
+    @property
+    framePath = 'textures/avatar/spriteFrame';
+
+    private requestId = 0;
+    private owned: SpriteFrame | null = null;
+
+    onEnable(): void {
+        this.show(this.framePath);
     }
 
-    // Use asset
-    const sprite = this.node.getComponent(Sprite);
-    sprite.spriteFrame = asset;
-});
+    show(path: string): void {
+        const requestId = ++this.requestId;
+        if (!this.enabledInHierarchy) return;
 
-// Load with path
-resources.load('prefabs/enemy', Prefab, (err, prefab) => {
-    const enemy = instantiate(prefab);
-    this.node.addChild(enemy);
-});
-```
-
-### Loading Arrays
-
-```typescript
-// Load all sprites in directory
-resources.loadDir('textures/monsters', SpriteFrame, (err, assets) => {
-    if (err) {
-        console.error('Failed to load:', err);
-        return;
-    }
-
-    // assets is array of SpriteFrame
-    assets.forEach((spriteFrame: SpriteFrame) => {
-        console.log('Loaded:', spriteFrame.name);
-    });
-});
-```
-
-### Loading with Promises
-
-```typescript
-// Wrap in promise
-function loadAsset<T>(path: string, type: typeof Asset): Promise<T> {
-    return new Promise((resolve, reject) => {
-        resources.load(path, type, (err, asset) => {
+        resources.load(path, SpriteFrame, (err, frame) => {
             if (err) {
-                reject(err);
-            } else {
-                resolve(asset as T);
+                console.error(`Failed to load ${path}`, err);
+                return;
             }
+            // Acquire a temporary reference even for a late result, so each
+            // successful result has a balanced ownership path.
+            frame.addRef();
+            if (!isValid(this, true) || !this.enabledInHierarchy ||
+                requestId !== this.requestId) {
+                frame.decRef();
+                return;
+            }
+            const sprite = this.getComponent(Sprite);
+            if (!sprite || !isValid(sprite, true)) {
+                frame.decRef();
+                return;
+            }
+            const previous = this.owned;
+            this.owned = frame;
+            sprite.spriteFrame = frame;
+            // Acquire before releasing: previous may be the same cached asset.
+            previous?.decRef();
         });
-    });
-}
+    }
 
-// Usage with async/await
-async loadPlayerSprite() {
-    try {
-        const spriteFrame = await loadAsset<SpriteFrame>(
-            'textures/player',
-            SpriteFrame
-        );
-        this.getComponent(Sprite).spriteFrame = spriteFrame;
-    } catch (err) {
-        console.error('Load failed:', err);
+    onDisable(): void {
+        this.clearOwned();
+    }
+
+    onDestroy(): void {
+        this.clearOwned(); // Idempotent if onDisable already cleared it.
+    }
+
+    private clearOwned(): void {
+        ++this.requestId;
+        const previous = this.owned;
+        this.owned = null;
+        if (!previous) return;
+        const sprite = this.getComponent(Sprite);
+        if (sprite && isValid(sprite, true) && sprite.spriteFrame === previous) {
+            sprite.spriteFrame = null;
+        }
+        previous.decRef();
     }
 }
 ```
 
-## Remote Resources
+The request token rejects out-of-order results and results from a previous enable cycle; `isValid(this, true)` catches pending destruction. Neither check cancels the underlying download. All dynamic consumers sharing these assets must follow an ownership policy; this component cannot protect consumers elsewhere that never retained their assets.
 
-### Loading Remote URLs
+For larger projects, centralize concurrent request/cache ownership in an asset service rather than copying ad-hoc force-release code into views.
 
-```typescript
-import { assetManager } from 'cc';
+## Remote image conversion
 
-// Load remote image
-assetManager.loadRemote('https://example.com/image.png', (err, imageAsset) => {
-    if (err) {
-        console.error('Failed to load remote:', err);
-        return;
-    }
-
-    const spriteFrame = new SpriteFrame();
-    spriteFrame.texture = imageAsset;
-    this.getComponent(Sprite).spriteFrame = spriteFrame;
-});
-
-// Load remote JSON
-assetManager.loadRemote('https://api.example.com/data.json', (err, jsonAsset) => {
-    if (err) return;
-
-    const data = jsonAsset.json;
-    console.log('Loaded data:', data);
-});
-```
-
-### Download & Cache
+A remote image loads as `ImageAsset`, not `Texture2D` or `SpriteFrame`:
 
 ```typescript
-// Download to cache
-assetManager.downloader.downloadFile(
-    'https://example.com/bundle.zip',
-    { timeout: 30 },
-    (err, path) => {
+import { assetManager, ImageAsset, SpriteFrame, Texture2D } from 'cc';
+
+// Conversion fragment: the caller must provide owner-validity checks and cleanup.
+assetManager.loadRemote<ImageAsset>(
+    'https://example.com/avatar.png',
+    (err, image) => {
         if (err) {
-            console.error('Download failed:', err);
+            console.error('Avatar download failed', err);
             return;
         }
-
-        console.log('Downloaded to:', path);
-    }
+        const texture = new Texture2D();
+        texture.image = image;
+        const frame = new SpriteFrame();
+        frame.texture = texture;
+        // Hand image/texture/frame to an explicit owner before assigning to UI.
+    },
 );
 ```
+
+For URLs without an extension, pass `{ ext: '.png' }` when PNG is actually the response type. Check CORS for Web and download-domain/cache restrictions for mini games. Remote native-file loading is not a way to directly load serialized prefabs or atlases; use a built Asset Bundle for those.
+
+The conversion fragment intentionally omits display/cleanup: retain the cached `ImageAsset` with balanced refs if needed, and track/destroy runtime-created `SpriteFrame`/`Texture2D` when no consumer uses them. Do not assume assigning runtime-created assets establishes serialized dependency ownership. A shared cache needs one consistent ownership policy, not independent forced destruction by each view.
 
 ## Asset Bundles
 
-### What are Asset Bundles?
+Configure a folder as **Is Bundle** in the Inspector. Load by configured name or a built Bundle URL; use the returned bundle's `load`/`loadScene`. `loadBundle` loads its manifest and scripts, not every contained asset. Higher-priority shared dependency Bundles may need loading first. Do not nest Bundles.
 
-Asset Bundles are packaged groups of assets that can be:
-- Loaded dynamically
-- Updated separately
-- Reduced initial download size
-- Organized by feature/level
+For scenes see [scene-management.md](scene-management.md). For unloading:
 
-### Creating Asset Bundles
+1. Stop new work and invalidate outstanding requests associated with the feature.
+2. Destroy/detach its consumers and dispose of its pools; balance references owned by the feature.
+3. If — and only if — the Bundle is confirmed exclusive (no cross-Bundle dependency, no pool or persistent consumer), release its assets first: `bundle.release(path, Type)` or `bundle.releaseAll()`.
+4. Then `assetManager.removeBundle(bundle)` removes the Bundle registration/cache. Removing it alone leaves already loaded assets cached.
+5. 3.8 has no `releaseUnusedAssets` sweep to fall back on, so state explicitly how an exclusive Bundle's assets are eventually released.
 
-1. Select folder in **Assets Manager**
-2. In **Properties**, check **Bundle**
-3. Set bundle name
+There is no `assetManager.releaseBundle(name)` shortcut. Do not call `releaseAll()` merely because one scene was closed; shared UI and persistent nodes may still consume its assets.
 
-```
-assets/
-├── resources/
-└── levels/
-    └── level1/  (configured as bundle "level1")
-        ├── scenes/
-        ├── textures/
-        └── prefabs/
-```
+## Verification
 
-### Loading Asset Bundles
+Test load failures, immediate close, A-then-B loads completed in reverse order, two views sharing a frame, re-enable before the previous request completes, and repeated scene cycles. Measure memory after stabilization; asset-cache counts are not a direct GPU-memory metric.
 
-```typescript
-@ccclass('BundleLoader')
-export class BundleLoader extends Component {
-    loadLevelBundle(bundleName: string) {
-        // Load bundle
-        assetManager.loadBundle(bundleName, (err, bundle) => {
-            if (err) {
-                console.error('Failed to load bundle:', err);
-                return;
-            }
+## Sources
 
-            // Load scene from bundle
-            bundle.loadScene('game', (err) => {
-                if (err) {
-                    console.error('Failed to load scene:', err);
-                    return;
-                }
-
-                director.runScene(bundle.getScene('game'));
-            });
-        });
-    }
-
-    loadAssetFromBundle(bundleName: string, assetPath: string) {
-        assetManager.loadBundle(bundleName, (err, bundle) => {
-            if (err) {
-                console.error('Bundle load failed:', err);
-                return;
-            }
-
-            // Load specific asset
-            bundle.load(assetPath, SpriteFrame, (err, asset) => {
-                if (err) {
-                    console.error('Asset load failed:', err);
-                    return;
-                }
-
-                this.getComponent(Sprite).spriteFrame = asset;
-            });
-        });
-    }
-}
-```
-
-### Preloading Bundles
-
-```typescript
-// Preload bundle (don't load into memory yet)
-assetManager.loadBundle('level2', (err, bundle) => {
-    if (err) {
-        console.error('Bundle preload failed:', err);
-        return;
-    }
-
-    // Now can load assets from bundle
-    bundle.preload('textures/background', SpriteFrame);
-});
-```
-
-### Releasing Bundles
-
-```typescript
-// Get loaded bundle
-const bundle = assetManager.getBundle('level1');
-
-// Release specific asset
-bundle.release('textures/player', SpriteFrame);
-
-// Release entire bundle
-assetManager.releaseBundle('level1');
-```
-
-## Memory Management
-
-### Asset Dependencies
-
-When you load an asset, its dependencies are also loaded:
-
-```typescript
-// Loading prefab also loads:
-// - Textures referenced by sprites
-// - Materials referenced by models
-// - Other prefabs referenced
-resources.load('prefabs/player', Prefab, (err, prefab) => {
-    // All dependencies loaded
-});
-```
-
-### Releasing Resources
-
-```typescript
-// Release single asset
-const asset = this.getComponent(Sprite).spriteFrame;
-assetManager.releaseAsset(asset);
-
-// Release by path
-resources.release('textures/player');
-
-// Release directory
-resources.releaseDir('textures/monsters');
-
-// Release asset bundle
-assetManager.releaseBundle('level1');
-```
-
-### Reference Counting
-
-Assets are automatically managed with reference counting:
-
-```typescript
-// Load asset
-resources.load('textures/player', SpriteFrame, (err, spriteFrame) => {
-    // Reference count = 1
-
-    // Assign to component
-    this.getComponent(Sprite).spriteFrame = spriteFrame;
-    // Reference count = 2
-
-    // Remove component
-    this.node.removeComponent(Sprite);
-    // Reference count = 1
-
-    // Release asset
-    assetManager.releaseAsset(spriteFrame);
-    // Reference count = 0, asset freed
-});
-```
-
-### Manual Memory Management
-
-```typescript
-@ccclass('ResourceManager')
-export class ResourceManager extends Component {
-    private loadedAssets: Set<Asset> = new Set();
-
-    loadAsset(path: string, type: typeof Asset) {
-        resources.load(path, type, (err, asset) => {
-            if (err) {
-                console.error('Load failed:', err);
-                return;
-            }
-
-            // Track asset
-            this.loadedAssets.add(asset);
-        });
-    }
-
-    releaseAll() {
-        this.loadedAssets.forEach(asset => {
-            assetManager.releaseAsset(asset);
-        });
-        this.loadedAssets.clear();
-    }
-
-    onDestroy() {
-        this.releaseAll();
-    }
-}
-```
-
-## Caching
-
-### Asset Cache
-
-```typescript
-// Cache is automatic for loaded assets
-
-// Check if asset in cache
-const cached = assetManager.assets.get('textures/player');
-
-// Clear all caches
-assetManager.assets.clear();
-
-// Release and remove from cache
-resources.release('textures/player');
-```
-
-### Preventing Caching
-
-```typescript
-// Load remote without cache
-assetManager.loadRemote(
-    'https://example.com/data.json',
-    { cacheEnabled: false },
-    (err, asset) => {
-        // Asset not cached
-    }
-);
-```
-
-## Preloading Strategy
-
-### Sequential Preloading
-
-```typescript
-@ccclass('PreloadManager')
-export class PreloadManager extends Component {
-    async preloadGameAssets() {
-        try {
-            // Preload textures
-            await this.preloadDir('textures/enemies', SpriteFrame);
-            await this.preloadDir('textures/ui', SpriteFrame);
-
-            // Preload audio
-            await this.preloadDir('audio/sfx', AudioClip);
-
-            // Preload prefabs
-            await this.preloadDir('prefabs/enemies', Prefab);
-
-            console.log('All assets preloaded');
-        } catch (err) {
-            console.error('Preload failed:', err);
-        }
-    }
-
-    preloadDir<T>(path: string, type: typeof Asset): Promise<void> {
-        return new Promise((resolve, reject) => {
-            resources.preloadDir(path, type, (err) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve();
-                }
-            });
-        });
-    }
-}
-```
-
-### Progressive Preloading
-
-```typescript
-@ccclass('ProgressiveLoader')
-export class ProgressiveLoader extends Component {
-    loadWithProgress() {
-        const assets = [
-            { path: 'textures/bg1', type: SpriteFrame },
-            { path: 'textures/bg2', type: SpriteFrame },
-            { path: 'textures/bg3', type: SpriteFrame },
-        ];
-
-        let loaded = 0;
-        const total = assets.length;
-
-        assets.forEach(asset => {
-            resources.load(asset.path, asset.type, (err) => {
-                if (err) {
-                    console.error('Load failed:', asset.path, err);
-                }
-
-                loaded++;
-                const progress = (loaded / total) * 100;
-                this.updateProgress(progress);
-
-                if (loaded === total) {
-                    console.log('All loaded');
-                }
-            });
-        });
-    }
-
-    updateProgress(percent: number) {
-        // Update UI progress bar
-    }
-}
-```
-
-## Best Practices
-
-1. **Release unused assets** to prevent memory leaks
-2. **Use Asset Bundles** for large games to reduce initial load time
-3. **Preload critical assets** before they're needed
-4. **Cache remote assets** locally when possible
-5. **Pool frequently used assets** instead of reloading
-6. **Monitor memory usage** with profiler tools
-7. **Use object pooling** for frequently created/destroyed objects
-8. **Release bundle** when switching levels/game modes
-
-## Memory Profiling
-
-```typescript
-@ccclass('MemoryMonitor')
-export class MemoryMonitor extends Component {
-    update() {
-        if (DEBUG_MODE) {
-            // Log memory usage (if supported)
-            const info = assetManager.assets.get('memory_info');
-            if (info) {
-                console.log('Asset count:', assetManager.assets.count);
-            }
-        }
-    }
-}
-```
-
-## Common Patterns
-
-### Asset Pool
-
-```typescript
-@ccclass('AssetPool')
-export class AssetPool extends Component {
-    private pool: Map<string, Asset[]> = new Map();
-
-    getAsset(path: string, type: typeof Asset): Promise<Asset> {
-        return new Promise((resolve, reject) => {
-            const key = `${path}_${type.name}`;
-
-            // Check pool
-            if (this.pool.has(key) && this.pool.get(key).length > 0) {
-                const asset = this.pool.get(key).pop();
-                resolve(asset);
-                return;
-            }
-
-            // Load new
-            resources.load(path, type, (err, asset) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(asset);
-                }
-            });
-        });
-    }
-
-    returnAsset(path: string, type: typeof Asset, asset: Asset) {
-        const key = `${path}_${type.name}`;
-        if (!this.pool.has(key)) {
-            this.pool.set(key, []);
-        }
-        this.pool.get(key).push(asset);
-    }
-}
-```
-
-### Lazy Loading
-
-```typescript
-@ccclass('LazyLoader')
-export class LazyLoader extends Component {
-    private loaded: boolean = false;
-
-    async ensureLoaded() {
-        if (this.loaded) return;
-
-        try {
-            await this.loadAsset('textures/heavy', SpriteFrame);
-            this.loaded = true;
-        } catch (err) {
-            console.error('Load failed:', err);
-        }
-    }
-
-    onEnable() {
-        this.ensureLoaded();
-    }
-}
-```
-
-## Troubleshooting
-
-### Asset Not Releasing
-
-```typescript
-// PROBLEM: Asset still in memory after release
-assetManager.releaseAsset(asset);
-
-// SOLUTION: Check for dependencies
-const deps = assetManager.dependUtil.getDeps(asset.id);
-deps.forEach(dep => {
-    assetManager.releaseAsset(dep);
-});
-```
-
-### Memory Leak
-
-```typescript
-// PROBLEM: Memory keeps increasing
-resources.load('texture', SpriteFrame, (err, asset) => {
-    this.getComponent(Sprite).spriteFrame = asset;
-    // Asset reference held by component
-});
-
-// SOLUTION: Release when done
-onDestroy() {
-    const sprite = this.getComponent(Sprite);
-    if (sprite && sprite.spriteFrame) {
-        assetManager.releaseAsset(sprite.spriteFrame);
-        sprite.spriteFrame = null;
-    }
-}
-```
-
-### Bundle Load Fails
-
-```typescript
-// PROBLEM: Bundle not found
-assetManager.loadBundle('my-bundle', callback);
-
-// SOLUTION: Verify bundle name and path
-// Check bundle is configured in Project Settings
-console.log('Available bundles:', assetManager.bundles.keys);
-```
+- [Asset loading and sub-assets](https://docs.cocos.com/creator/3.8/manual/en/asset/dynamic-load-resources.html)
+- [Release checks and dynamic references](https://docs.cocos.com/creator/3.8/manual/en/asset/release-manager.html)
+- [Asset Bundle overview](https://docs.cocos.com/creator/3.8/manual/en/asset/bundle.html)

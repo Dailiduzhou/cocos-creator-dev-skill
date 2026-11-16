@@ -1,520 +1,91 @@
-# Node & Hierarchy Management
+# Nodes, transforms, and lifetime (Creator 3.8 baseline)
 
-Working with nodes, scene hierarchy, and coordinate systems in Cocos Creator 3.x.
+## Hierarchy and validity
 
-## Node Basics
+- Use `new Node(name)` for an empty node, `instantiate(prefab)` for a configured hierarchy, and `addChild`/`setParent` to attach it.
+- Guard `parent`, `getChildByName`, `getChildByPath`, and component lookups; they may be absent.
+- `find(path, root?)` searches a hierarchy path; it is not an unrestricted recursive name search.
+- `removeFromParent()` detaches; it does not destroy. `destroy()` and `destroyAllChildren()` schedule destruction, not immediate deallocation.
+- `node.active` is local intent; `node.activeInHierarchy` includes ancestor activity. Setting a parent's `active` does not rewrite each child's local flag.
+- Inactive is not invalid. Check `isValid(node, true)` for a destroyed or pending-destruction reference rather than using activity as a proxy.
 
-### What is a Node?
+## Transform signatures
 
-Nodes (`Node`) are the building blocks of Cocos Creator scenes. They form a hierarchical tree structure where:
-- Each node can have multiple children
-- Each node has exactly one parent (except root)
-- Components are attached to nodes to add functionality
-
-### Node Properties
+The following fragments assume a valid `node: Node` and imports from `cc`:
 
 ```typescript
-const node = this.node;
+node.setPosition(10, 20, 0);          // Parent-local coordinates
+node.setWorldPosition(10, 20, 0);     // World coordinates
+node.setRotationFromEuler(0, 0, 90);  // Degrees
+node.setScale(2, 2, 2);               // Explicit uniform scale
 
-// Active state
-node.active = true;  // Enable/disable node
-
-// Name
-node.name = 'Player';  // Node name for finding
-
-// Position (local)
-node.setPosition(x, y, z);
-node.setPosition(new Vec3(x, y, z));
-
-// Rotation (local)
-node.setRotationFromEuler(x, y, z);
-
-// Scale (local)
-node.setScale(x, y, z);
-
-// Layer
-node.layer = 1 << 0;  // Bitmask for layers
+const rotation = new Quat();
+Quat.fromEuler(rotation, 0, 90, 0);
+node.setRotation(rotation);          // Quaternion, not three Euler angles
+node.rotate(rotation);              // Relative quaternion rotation
 ```
 
-## Creating Nodes
+Do not pass a `Vec3` to `rotate()` or assume `setScale(2)` means uniform scale. Use setters rather than mutating individual members of a returned transform vector, so the engine's transform updates are notified.
 
-### Creating Empty Node
+For reparenting while preserving world transforms, check the installed version's `setParent(parent, keepWorldTransform)` signature and use the second argument deliberately.
+
+## Coordinate conversion
+
+For a point in local space, transform it with the node's world matrix; `getWorldPosition(out)` returns only the node origin, not an arbitrary transformed point.
 
 ```typescript
-const newNode = new Node('NewNode');
-this.node.addChild(newNode);
+import { Node, Vec3 } from 'cc';
+
+export function pointInOtherSpace(
+    source: Node, destination: Node, point: Vec3, out: Vec3,
+): Vec3 {
+    Vec3.transformMat4(out, point, source.worldMatrix);
+    destination.inverseTransformPoint(out, out);
+    return out;
+}
 ```
 
-### Creating Node with Component
+For UI dragging under a standard Canvas UI camera, obtain `event.getUILocation()`, turn it into `Vec3(x, y, 0)`, then call the **parent's** `UITransform.convertToNodeSpaceAR(...)` before assigning the child's local position. A custom camera, render texture, or world-space UI needs camera-aware screen/world conversion instead. See [event-system.md](event-system.md).
+
+Use `UITransform` for UI content size/anchor, `UIOpacity` for UI opacity, and `Layers.Enum`/`Layers.BitMask` for engine layers. A camera's visibility mask must include the node's layer. Do not invent a `LayerManager.Mask.UI` constant.
+
+## Safe prefab creation
 
 ```typescript
-// Method 1: Create and add component
-const spriteNode = new Node('Sprite');
-const sprite = spriteNode.addComponent(Sprite);
-sprite.spriteFrame = spriteFrame;
+import { _decorator, Component, instantiate, Prefab } from 'cc';
+const { ccclass, property } = _decorator;
 
-// Method 2: Use prefab
-const newNode = instantiate(this.prefab);
-this.node.addChild(newNode);
-```
-
-### Creating from Prefab
-
-```typescript
 @ccclass('Spawner')
 export class Spawner extends Component {
     @property(Prefab)
-    enemyPrefab: Prefab = null;
-
-    spawnEnemy() {
-        const enemy = instantiate(this.enemyPrefab);
-        enemy.setParent(this.node);
-        enemy.setPosition(0, 0, 0);
-    }
-}
-```
-
-## Node Hierarchy
-
-### Parent-Child Relationships
-
-```typescript
-// Add child
-this.node.addChild(childNode);
-
-// Set parent (removes from current parent)
-childNode.setParent(newParent);
-
-// Insert at specific index
-this.node.insertChild(childNode, 0);  // Insert at beginning
-
-// Remove from parent
-childNode.removeFromParent();
-
-// Remove all children
-this.node.removeAllChildren();
-```
-
-### Accessing Hierarchy
-
-```typescript
-// Get parent
-const parent = this.node.parent;
-
-// Get children (array)
-const children = this.node.children;
-
-// Get child by name
-const child = this.node.getChildByName('ChildName');
-
-// Get child by path
-const deepChild = this.node.getChildByPath('Parent/Child/Grandchild');
-
-// Get sibling index
-const index = this.node.getSiblingIndex();
-
-// Set sibling order
-this.node.setSiblingIndex(2);
-```
-
-### Searching Hierarchy
-
-```typescript
-// Find anywhere in scene
-const player = find('Player');
-const healthBar = find('Canvas/HealthBar');
-
-// Search in children
-const sprite = this.node.getComponentInChildren(Sprite);
-
-// Search all descendants
-const allSprites = this.node.getComponentsInChildren(Sprite);
-```
-
-## Node Transformations
-
-### Position
-
-```typescript
-// Local position (relative to parent)
-const localPos = this.node.position;
-this.node.setPosition(x, y, z);
-
-// World position
-const worldPos = this.node.worldPosition;
-this.node.setWorldPosition(x, y, z);
-
-// Move relative
-this.node.setPosition(
-    this.node.position.x + deltaX,
-    this.node.position.y + deltaY,
-    this.node.position.z
-);
-
-// Shortcut methods
-this.node.setPosition(x, y);
-this.node.setPosition(x, y, z);
-this.node.setPosition(vec3);
-```
-
-### Rotation
-
-```typescript
-// Euler angles (degrees)
-this.node.setRotationFromEuler(x, y, z);
-
-// Quaternion
-const quat = new Quat();
-this.node.setRotation(quat);
-
-// Get rotation
-const rotation = this.node.rotation;  // Quaternion
-const euler = this.node.eulerAngles;  // Euler angles
-
-// Rotate relative
-this.node.rotate(new Vec3(0, 90, 0));  // Rotate 90° around Y
-```
-
-### Scale
-
-```typescript
-// Set scale
-this.node.setScale(x, y, z);
-
-// Uniform scale
-this.node.setScale(2);  // Scale all by 2
-
-// Get scale
-const scale = this.node.scale;
-
-// Scale relative
-this.node.setScale(
-    this.node.scale.x * 2,
-    this.node.scale.y * 2,
-    this.node.scale.z * 2
-);
-```
-
-### Coordinate Conversion
-
-```typescript
-// Local to world
-const worldPos = new Vec3();
-this.node.getWorldPosition(worldPos);
-
-// World to local
-const localPos = new Vec3();
-this.node.inverseTransformPoint(localPos, worldPos);
-
-// Convert point to another node's space
-const targetPos = new Vec3();
-targetNode.inverseTransformPoint(targetPos, worldPos);
-```
-
-## Node Activation
-
-### Active State
-
-```typescript
-// Get/set active
-const isActive = this.node.active;
-this.node.active = true;
-
-// Set active recursively
-this.node.active = true;  // Affects children
-
-// Check if active in hierarchy
-const activeInHierarchy = this.node.activeInHierarchy;
-```
-
-### Activation Events
-
-```typescript
-@ccclass('ActivationHandler')
-export class ActivationHandler extends Component {
-    onEnable() {
-        console.log('Node activated');
-        // Resume timers, restart animations
-    }
-
-    onDisable() {
-        console.log('Node deactivated');
-        // Pause timers, save state
-    }
-}
-```
-
-## Destroying Nodes
-
-### Destroy vs Remove
-
-```typescript
-// Remove from hierarchy (node still exists)
-this.node.removeFromParent();
-
-// Destroy completely (will be freed at end of frame)
-this.node.destroy();
-
-// Destroy immediately
-this.node.destroyAllChildren();
-this.node.destroy();
-```
-
-### Safe Destruction Pattern
-
-```typescript
-@ccclass('Bullet')
-export class Bullet extends Component {
-    lifetime: number = 2;
-
-    start() {
-        this.scheduleOnce(() => {
-            if (isValid(this.node)) {
-                this.node.destroy();
-            }
-        }, this.lifetime);
-    }
-
-    onDestroy() {
-        console.log('Bullet destroyed');
-    }
-}
-```
-
-### Checking Validity
-
-```typescript
-// Check if node/object is valid
-if (isValid(this.node)) {
-    // Safe to use
-}
-
-// Check if component exists
-if (this.target && isValid(this.target)) {
-    this.target.doSomething();
-}
-```
-
-## Hierarchy Organization Best Practices
-
-### Scene Structure
-
-```
-SceneRoot
-├── Canvas (UI root)
-│   ├── UI_MainMenu
-│   ├── UI_HUD
-│   └── UI_PauseMenu
-├── GameManager
-├── Player
-├── Enemies
-│   ├── Enemy_01
-│   └── Enemy_02
-├── Collectibles
-└── Environment
-    ├── Ground
-    └── Obstacles
-```
-
-### Naming Conventions
-
-- Use descriptive names: `Player`, `Enemy_01`, `HealthBar`
-- Group with prefixes for organization: `UI_`, `FX_`, `Temp_`
-- Use consistent numbering: `Waypoint_01`, `Waypoint_02`
-
-### Logical Grouping
-
-```typescript
-// Create container node
-const enemyContainer = new Node('Enemies');
-this.node.addChild(enemyContainer);
-
-// Spawn enemies in container
-for (let i = 0; i < 10; i++) {
-    const enemy = instantiate(this.enemyPrefab);
-    enemy.setParent(enemyContainer);
-}
-
-// Move entire group
-enemyContainer.setPosition(x, y, z);
-
-// Destroy entire group
-enemyContainer.destroy();
-```
-
-### Node Layers
-
-```typescript
-// Set layer for filtering
-this.node.layer = LayerManager.Mask.UI;
-
-// Check layer
-if (node.layer === LayerManager.Mask.UI) {
-    // Handle UI
-}
-
-// Common layers
-enum Layers {
-    UI = 1 << 0,
-    Player = 1 << 1,
-    Enemy = 1 << 2,
-    Ground = 1 << 3,
-}
-```
-
-## Performance Optimization
-
-### Object Pooling
-
-```typescript
-@ccclass('BulletPool')
-export class BulletPool extends Component {
-    @property(Prefab)
-    bulletPrefab: Prefab = null;
-
-    private pool: Node[] = [];
-
-    get(): Node {
-        if (this.pool.length > 0) {
-            const bullet = this.pool.pop();
-            bullet.active = true;
-            return bullet;
+    prefab: Prefab | null = null;
+
+    spawn(): void {
+        if (!this.prefab) {
+            console.warn('Assign Spawner.prefab in the Inspector');
+            return;
         }
-        return instantiate(this.bulletPrefab);
-    }
-
-    put(bullet: Node) {
-        bullet.active = false;
-        bullet.removeFromParent();
-        this.pool.push(bullet);
+        const child = instantiate(this.prefab);
+        child.setPosition(0, 0, 0);
+        this.node.addChild(child);
     }
 }
 ```
 
-### Minimize Hierarchy Depth
+Wire the Prefab in the Inspector. Instantiating a dynamically loaded prefab does not remove the need to define ownership of its source/dependencies; keep the asset ownership valid for its live instances.
 
-```
-GOOD: Flat structure
-Player
-├── Sprite
-├── Body
-└── Weapon
+## Pooling and performance
 
-AVOID: Deep nesting
-Player
-└── Container
-    └── Container2
-        └── Container3
-            └── Sprite
-```
+Pool only when profiling shows frequent creation/destruction matters. Define the whole pool lifecycle:
 
-### Batch Similar Objects
+1. Acquire: create or retrieve, configure/reset state, parent it, then activate.
+2. Return: invalidate async work, stop owned tweens/schedules/listeners, deactivate, detach, and prevent duplicate returns.
+3. Dispose: destroy retained nodes and release assets owned by the pool after consumers are gone.
 
-```typescript
-// Group static objects
-const staticContainer = new Node('StaticObjects');
-this.node.addChild(staticContainer);
+Pooling without resetting component state can turn a performance optimization into a correctness bug. Removing all children is not pool disposal. Likewise, grouping nodes under a parent does not guarantee batching; measure material/texture compatibility, masks, render ordering, and target-platform draw calls. Do not use nonexistent helpers such as `addComponentStatic`.
 
-// Enable static batching
-staticContainer.addComponentStatic(UIMeshRenderer);
-```
+## Sources
 
-## Common Patterns
-
-### Scene Loading Hook
-
-```typescript
-@ccclass('SceneLoader')
-export class SceneLoader extends Component {
-    onLoad() {
-        // Wait for scene to fully load
-        director.once(Director.EVENT_AFTER_SCENE_LAUNCH, this.onSceneLoaded, this);
-    }
-
-    onSceneLoaded() {
-        // Safe to access all nodes
-        this.initializeGame();
-    }
-}
-```
-
-### Dynamic UI Creation
-
-```typescript
-@ccclass('InventoryUI')
-export class InventoryUI extends Component {
-    @property(Prefab)
-    itemSlotPrefab: Prefab = null;
-
-    @property(Node)
-    container: Node = null;
-
-    createSlots(count: number) {
-        for (let i = 0; i < count; i++) {
-            const slot = instantiate(this.itemSlotPrefab);
-            slot.setParent(this.container);
-            slot.setPosition(i * 100, 0, 0);
-        }
-    }
-}
-```
-
-### Following Node
-
-```typescript
-@ccclass('FollowTarget')
-export class FollowTarget extends Component {
-    @property(Node)
-    target: Node = null;
-
-    @property
-    smoothness: number = 5;
-
-    lateUpdate() {
-        if (!this.target) return;
-
-        const targetPos = this.target.worldPosition.clone();
-        const currentPos = this.node.worldPosition.clone();
-
-        Vec3.lerp(currentPos, currentPos, targetPos, this.smoothness * deltaTime);
-        this.node.setWorldPosition(currentPos);
-    }
-}
-```
-
-## Troubleshooting
-
-### Node Not Found
-
-```typescript
-// WRONG - case sensitive
-const node = find('player');
-
-// CORRECT - exact case
-const node = find('Player');
-```
-
-### Position Not Updating
-
-```typescript
-// Check if node is active
-if (!this.node.activeInHierarchy) {
-    console.log('Node is inactive');
-}
-
-// Check if parent is active
-if (!this.node.parent.activeInHierarchy) {
-    console.log('Parent is inactive');
-}
-```
-
-### Transform Issues
-
-```typescript
-// Remember local vs world space
-// Local is relative to parent
-this.node.setPosition(x, y, z);
-
-// World is absolute in scene
-this.node.setWorldPosition(x, y, z);
-```
+- [Node API](https://docs.cocos.com/creator/3.8/api/en/class/Node)
+- [UITransform API](https://docs.cocos.com/creator/3.8/api/en/class/UITransform)
+- [Node input requirements](https://docs.cocos.com/creator/3.8/manual/en/engine/event/event-node.html)
