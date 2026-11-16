@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate skill source
+        run: python scripts/verify_skill.py cocos-creator-dev
+
+      - name: Check committed archive matches source
+        run: |
+          rm -rf /tmp/committed && mkdir -p /tmp/committed
+          unzip -q cocos-creator-dev.skill -d /tmp/committed
+          if ! diff -r /tmp/committed cocos-creator-dev; then
+            echo "::error::cocos-creator-dev.skill is stale; run python package_skill.py and commit it"
+            exit 1
+          fi
+
+      - name: Build archive
+        run: python package_skill.py cocos-creator-dev
+
+      - name: Check archive contents
+        run: |
+          rm -rf /tmp/archive && mkdir -p /tmp/archive
+          unzip -q cocos-creator-dev.skill -d /tmp/archive
+          diff -r /tmp/archive cocos-creator-dev
+          if unzip -l cocos-creator-dev.skill | grep -Eq '(^| )evals/'; then
+            echo "::error::evals/ must not be part of the distributed skill"
+            exit 1
+          fi
+
+      - name: Install smoke test
+        run: |
+          npm install -g skills@1 >/dev/null 2>&1 || npx --yes skills@1 --version
+          mkdir -p /tmp/consumer && cd /tmp/consumer && git init -q
+          npx --yes skills@1 add "$GITHUB_WORKSPACE" -y --copy
+          test -f .agents/skills/cocos-creator-dev/SKILL.md
+          diff -r .agents/skills/cocos-creator-dev "$GITHUB_WORKSPACE/cocos-creator-dev"

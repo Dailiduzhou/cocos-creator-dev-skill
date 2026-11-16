@@ -1,5 +1,7 @@
 # Cocos Creator 3.x 开发技能 (Skill)
 
+[![ci](https://github.com/Dailiduzhou/cocos-creator-dev-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/Dailiduzhou/cocos-creator-dev-skill/actions/workflows/ci.yml) [![release](https://github.com/Dailiduzhou/cocos-creator-dev-skill/actions/workflows/release.yml/badge.svg)](https://github.com/Dailiduzhou/cocos-creator-dev-skill/actions/workflows/release.yml)
+
 一个为 [Claude](https://claude.ai) 提供的综合技能，专注于使用 TypeScript 进行 Cocos Creator 3.x 游戏开发的专家指导。
 
 ## 概述
@@ -127,6 +129,25 @@ export class PlayerController extends Component {
 - **[事件系统](cocos-creator-dev/references/event-system.md)** - 输入处理和自定义事件
 - **[版本迁移](cocos-creator-dev/references/migration.md)** - 2.x 迁移与早期 3.x 的版本边界
 - **[官方来源](cocos-creator-dev/references/official-sources.md)** - 版本化文档与核验策略
+
+## 发布（Releases）
+
+发布由 CI 从 tag 构建，不依赖本机：
+
+1. 合并改动并重新打包（`python package_skill.py`），源码与产物一起提交。
+2. 打 tag 并推送：`git tag -a v1.2.0 -m "v1.2.0" && git push origin v1.2.0`
+3. `.github/workflows/release.yml` 会校验技能、检查已提交产物、从 tag 重新打包并再次比对源码，然后发布 `cocos-creator-dev.skill`、`cocos-creator-dev.zip`、`SHA256SUMS.txt`，并自动生成 release notes。
+
+不需要额外 secrets：使用仓库自带的 `GITHUB_TOKEN`（`contents: write`）。tag 必须形如 `v1.2.3`。要补发已有 tag，可手动运行工作流（Actions -> release -> Run workflow）。
+
+按 tag 固定安装版本：
+
+```bash
+npx skills add https://github.com/Dailiduzhou/cocos-creator-dev-skill/tree/v1.2.0/cocos-creator-dev -a pi -y
+npx skills add https://raw.githubusercontent.com/Dailiduzhou/cocos-creator-dev-skill/v1.2.0/cocos-creator-dev.skill -a pi -y
+```
+
+`.github/workflows/ci.yml` 在每次 push 到 `main` 和 PR 时执行同样的校验，并额外做一次安装冒烟测试。
 
 ## 兼容性
 

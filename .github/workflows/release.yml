@@ -1,0 +1,113 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish (for example v1.2.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Resolve and validate tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          git rev-parse --verify "refs/tags/${TAG}" >/dev/null
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "::error::tag '$TAG' must look like v1.2.3"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate skill source
+        run: python scripts/verify_skill.py cocos-creator-dev
+
+      - name: Check committed archive matches source
+        run: |
+          rm -rf /tmp/committed && mkdir -p /tmp/committed
+          unzip -q cocos-creator-dev.skill -d /tmp/committed
+          if ! diff -r /tmp/committed cocos-creator-dev; then
+            echo "::error::cocos-creator-dev.skill is stale; run python package_skill.py and commit it"
+            exit 1
+          fi
+
+      - name: Build archive
+        run: python package_skill.py cocos-creator-dev
+
+      - name: Check archive contents
+        run: |
+          rm -rf /tmp/archive && mkdir -p /tmp/archive
+          unzip -q cocos-creator-dev.skill -d /tmp/archive
+          diff -r /tmp/archive cocos-creator-dev
+          if unzip -l cocos-creator-dev.skill | grep -Eq '(^| )evals/'; then
+            echo "::error::evals/ must not be part of the distributed skill"
+            exit 1
+          fi
+          test -f /tmp/archive/SKILL.md
+
+      - name: Prepare release assets
+        run: |
+          cp cocos-creator-dev.skill cocos-creator-dev.zip
+          sha256sum cocos-creator-dev.skill cocos-creator-dev.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          cat > /tmp/notes.md <<EOF
+          Cocos Creator development skill, $TAG.
+
+          Install with the skills CLI:
+
+          \`\`\`bash
+          npx skills add ${{ github.repository }}               # latest
+          npx skills add ${{ github.repository }}/tree/$TAG/cocos-creator-dev   # this tag
+          \`\`\`
+
+          Or install the attached archive directly (the CLI sniffs the zip):
+
+          \`\`\`bash
+          npx skills add https://github.com/${{ github.repository }}/releases/download/$TAG/cocos-creator-dev.skill -a pi -y
+          \`\`\`
+
+          Assets: \`cocos-creator-dev.skill\` (import/unzip), \`cocos-creator-dev.zip\` (same bytes), \`SHA256SUMS.txt\`.
+          EOF
+          gh release create "$TAG" \
+            cocos-creator-dev.skill \
+            cocos-creator-dev.zip \
+            SHA256SUMS.txt \
+            --title "$TAG" \
+            --notes-file /tmp/notes.md \
+            --generate-notes \
+            --verify-tag

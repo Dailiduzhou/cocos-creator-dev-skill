@@ -5,7 +5,9 @@ cocos-creator-dev-skill/
 ├── README.md / README_CN.md        # Scope, installation, compatibility
 ├── INSTALL.md                     # Installation guide
 ├── LICENSE
-├── package_skill.py               # Existing release packaging helper
+├── package_skill.py               # Packaging helper (excludes dev paths)
+├── scripts/verify_skill.py        # Frontmatter/link/fence/evals validation
+├── .github/workflows/             # ci.yml (verify+smoke) and release.yml (tag -> release)
 ├── cocos-creator-dev.skill         # Prebuilt release archive; not live source
 ├── cocos-creator-dev/              # Authoritative skill source
 │   ├── SKILL.md                   # Trigger metadata and development workflow

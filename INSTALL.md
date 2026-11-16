@@ -60,6 +60,21 @@ npx skills add ./cocos-creator-dev-skill/cocos-creator-dev --copy -y
 
 Installing the repository root also works (`npx skills add ./cocos-creator-dev-skill`); discovery finds the single skill inside it.
 
+## Versioned installs
+
+Every `vX.Y.Z` tag is published as a GitHub release with `cocos-creator-dev.skill`, `cocos-creator-dev.zip` and `SHA256SUMS.txt`:
+
+```bash
+# whole skill directory at a tag
+npx skills add https://github.com/Dailiduzhou/cocos-creator-dev-skill/tree/v1.2.0/cocos-creator-dev -a pi -y
+
+# release archive by URL (zip sniffed, extension irrelevant)
+npx skills add https://raw.githubusercontent.com/Dailiduzhou/cocos-creator-dev-skill/v1.2.0/cocos-creator-dev.skill -a pi -y
+
+# verify a downloaded asset
+sha256sum -c SHA256SUMS.txt
+```
+
 ## Verification
 
 ```bash

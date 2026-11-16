@@ -1,5 +1,7 @@
 # Cocos Creator 3.x Development Skill
 
+[![ci](https://github.com/Dailiduzhou/cocos-creator-dev-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/Dailiduzhou/cocos-creator-dev-skill/actions/workflows/ci.yml) [![release](https://github.com/Dailiduzhou/cocos-creator-dev-skill/actions/workflows/release.yml/badge.svg)](https://github.com/Dailiduzhou/cocos-creator-dev-skill/actions/workflows/release.yml)
+
 A comprehensive skill for [Claude](https://claude.ai) that provides expert guidance for Cocos Creator 3.x game development using TypeScript.
 
 ## Overview
@@ -128,6 +130,25 @@ The skill includes detailed reference documentation:
 - **[Event System](cocos-creator-dev/references/event-system.md)** - Input handling and custom events
 - **[Migration](cocos-creator-dev/references/migration.md)** - 2.x migration and earlier 3.x version boundaries
 - **[Official Sources](cocos-creator-dev/references/official-sources.md)** - Versioned sources and evidence policy
+
+## Releases
+
+Releases are built by CI from a tag, never from a developer machine:
+
+1. Land the change and rebuild the archive (`python package_skill.py`), then commit both source and archive.
+2. Tag and push: `git tag -a v1.2.0 -m "v1.2.0" && git push origin v1.2.0`
+3. `.github/workflows/release.yml` validates the skill, checks the committed archive, rebuilds from the tag, re-checks the archive against the source, and publishes `cocos-creator-dev.skill`, `cocos-creator-dev.zip` and `SHA256SUMS.txt` with generated notes.
+
+No secrets are required: the workflow uses the repository `GITHUB_TOKEN` with `contents: write`. Tags must look like `v1.2.3`. To publish an existing tag, run the workflow manually (Actions -> release -> Run workflow).
+
+Pin an install to a tag either way:
+
+```bash
+npx skills add https://github.com/Dailiduzhou/cocos-creator-dev-skill/tree/v1.2.0/cocos-creator-dev -a pi -y
+npx skills add https://raw.githubusercontent.com/Dailiduzhou/cocos-creator-dev-skill/v1.2.0/cocos-creator-dev.skill -a pi -y
+```
+
+`.github/workflows/ci.yml` runs the same validation plus an install smoke test on every push to `main` and on pull requests.
 
 ## Compatibility
 
